@@ -16,6 +16,8 @@
     --red-dark: #991b1b;
     --yellow: #facc15;
     --blue: #2563eb;
+    --green: #22c55e;
+    --green-dark: #166534;
   }
   * { box-sizing: border-box; }
   body { margin:0; font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text); }
@@ -37,6 +39,10 @@
   button { cursor:pointer; border:0; border-radius:10px; padding:9px 11px; background:#111827; color:white; font-weight:700; }
   button.secondary { background:#e5e7eb; color:#111827; }
   button.blue { background:var(--blue); }
+  button.green { background:var(--green-dark); }
+  button.danger { background:#991b1b; }
+  button.small { padding:6px 8px; font-size:12px; border-radius:8px; }
+  button:disabled { opacity:.55; cursor:not-allowed; }
   .matchbox { display:flex; align-items:flex-start; gap:8px; font-size:13px; color:#374151; margin-bottom:10px; line-height:1.35; }
   .filters { display:flex; flex-direction:column; gap:8px; max-height: 58vh; overflow:auto; padding-right:4px; }
   .filter { display:grid; grid-template-columns: auto 1fr auto; gap:8px; align-items:start; padding:9px; border:1px solid #e5e7eb; border-radius:11px; background:#fff; }
@@ -51,6 +57,7 @@
   .spot { border:1px solid #9ca3af; background:white; color:#111827; font-weight:700; transition: transform .08s ease, background .12s ease, color .12s ease; }
   .spot.hasRecord { background:white; border-color:#9ca3af; }
   .spot.match { background:var(--red); color:white; border-color:var(--red-dark); box-shadow:0 0 0 2px rgba(239,68,68,.22); transform: scale(1.06); z-index:2; }
+  .spot.complete { background:var(--green); color:white; border-color:var(--green-dark); box-shadow:0 0 0 2px rgba(34,197,94,.24); transform: scale(1.06); z-index:3; }
   .spot.noRecord { opacity:.55; }
   .spot.selectedSpot { outline:3px solid #2563eb; outline-offset:1px; }
   .labelcell { background:#e5e7eb; color:#374151; border:1px solid #d1d5db; font-weight:700; }
@@ -58,6 +65,7 @@
   .key { display:flex; align-items:center; gap:6px; }
   .swatch { width:16px; height:12px; border-radius:3px; border:1px solid #9ca3af; }
   .swatch.red { background:#ef4444; border-color:#991b1b; }
+  .swatch.green { background:#22c55e; border-color:#166534; }
   .swatch.white { background:#fff; }
   .resultsSummary { font-weight:800; }
   .tableWrap { overflow:auto; max-height: 420px; }
@@ -67,6 +75,10 @@
   tr:hover td { background:#f9fafb; }
   .issueList { display:flex; flex-wrap:wrap; gap:4px; }
   .issueTag { background:#fee2e2; color:#991b1b; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:700; }
+  .statusTag { display:inline-block; border-radius:999px; padding:3px 8px; font-size:11px; font-weight:800; white-space:nowrap; }
+  .statusTag.complete { background:#dcfce7; color:#166534; }
+  .statusTag.open { background:#f3f4f6; color:#374151; }
+  .reportNote { font-size:12px; color:#6b7280; line-height:1.35; margin-top:8px; }
   .empty { padding:18px; color:var(--muted); text-align:center; }
   .warn { margin-top:12px; padding:10px 12px; border-radius:12px; background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:13px; line-height:1.35; }
   @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } .filters { max-height: 320px; } }
@@ -75,7 +87,7 @@
 <body>
 <header>
   <h1>Democrat Tug Repair Parking Map</h1>
-  <div class="subtitle">Choose one or more approved repair filters. Matching parking spot numbers light up red on the map.</div>
+  <div class="subtitle">Choose one or more approved repair filters. Matching spots turn red. Completed tugs turn green and are saved in this browser.</div>
 </header>
 <main>
   <div class="layout">
@@ -87,13 +99,19 @@
           <div class="stat"><b id="matchCountStat">0</b><span>matching assets</span></div>
           <div class="stat"><b id="spotCountStat">0</b><span>matching spots</span></div>
           <div class="stat"><b id="blankSpotStat">0</b><span>assets with blank spot</span></div>
+          <div class="stat"><b id="completeCountStat">0</b><span>completed repairs</span></div>
+          <div class="stat"><b id="notCompleteCountStat">0</b><span>not completed repairs</span></div>
         </div>
         <input id="filterSearch" class="search" placeholder="Search filters..." />
         <label class="matchbox"><input id="matchAll" type="checkbox" /> Match all selected filters instead of any selected filter.</label>
         <div class="controls">
           <button id="clearBtn" class="secondary">Clear Filters</button>
           <button id="selectBaseBtn" class="blue">Select Inspection Filters</button>
+          <button id="undoCompleteBtn" class="secondary" disabled>Undo Last Complete</button>
+          <button id="sendCompleteBtn" class="green">Send Complete Email</button>
+          <button id="downloadCsvBtn" class="secondary">Download Complete CSV</button>
         </div>
+        <div class="reportNote">Completion status is saved on this computer/browser. Use the email or CSV button before switching computers.</div>
         <div id="filters" class="filters"></div>
         <div id="dataWarning" class="warn"></div>
       </div>
@@ -111,6 +129,7 @@
       <div class="legend">
         <div class="key"><span class="swatch white"></span> Default map spot</div>
         <div class="key"><span class="swatch red"></span> Matches selected filter</div>
+        <div class="key"><span class="swatch green"></span> Completed repair</div>
       </div>
     </section>
   </div>
@@ -137,11 +156,19 @@ const assetCount = byId('assetCount');
 const matchCountStat = byId('matchCountStat');
 const spotCountStat = byId('spotCountStat');
 const blankSpotStat = byId('blankSpotStat');
+const completeCountStat = byId('completeCountStat');
+const notCompleteCountStat = byId('notCompleteCountStat');
+const undoCompleteBtn = byId('undoCompleteBtn');
+const sendCompleteBtn = byId('sendCompleteBtn');
+const downloadCsvBtn = byId('downloadCsvBtn');
 const mapStatus = byId('mapStatus');
 const resultsSummary = byId('resultsSummary');
 const dataWarning = byId('dataWarning');
 let selectedFilters = new Set();
 let selectedSpot = '';
+const STORAGE_KEY = 'democratTugCompletedAssets_v1';
+let completedAssets = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+let lastCompletionAction = null;
 
 const recordsBySpot = new Map();
 APP_DATA.records.forEach(r => {
@@ -163,6 +190,91 @@ function sortRecords(a,b) {
   const an = /^\d+$/.test(as), bn = /^\d+$/.test(bs);
   if (an && bn) return Number(as) - Number(bs);
   return as.localeCompare(bs, undefined, {numeric:true});
+}
+
+function repairRecords() {
+  return APP_DATA.records.filter(r => (r.issues || []).length > 0);
+}
+function saveCompletedAssets() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([...completedAssets].sort()));
+}
+function setAssetComplete(asset, isComplete) {
+  const wasComplete = completedAssets.has(asset);
+  if (isComplete) completedAssets.add(asset); else completedAssets.delete(asset);
+  lastCompletionAction = { asset, wasComplete };
+  saveCompletedAssets();
+  updateAll(false);
+}
+function undoLastComplete() {
+  if (!lastCompletionAction) return;
+  if (lastCompletionAction.wasComplete) completedAssets.add(lastCompletionAction.asset);
+  else completedAssets.delete(lastCompletionAction.asset);
+  lastCompletionAction = null;
+  saveCompletedAssets();
+  updateAll(false);
+}
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+function completionReportRows() {
+  return APP_DATA.records.slice().sort(sortRecords).map(r => ({
+    status: completedAssets.has(r.asset) ? 'COMPLETE' : ((r.issues || []).length ? 'NOT COMPLETE' : 'NO APPROVED REPAIR ISSUE'),
+    asset: r.asset,
+    spot: r.spot || 'Blank',
+    issues: (r.issues || []).join('; '),
+    comment: r.comment || ''
+  }));
+}
+function buildCompletionReport() {
+  const rows = completionReportRows();
+  const completed = rows.filter(r => r.status === 'COMPLETE');
+  const notCompleted = rows.filter(r => r.status === 'NOT COMPLETE');
+  const noIssue = rows.filter(r => r.status === 'NO APPROVED REPAIR ISSUE');
+  const lineFor = r => `Asset ${r.asset} | Spot ${r.spot} | ${r.issues || 'No approved repair issue'}${r.comment ? ' | Comment: ' + r.comment : ''}`;
+  return [
+    'Democrat Tug Repair Completion Report',
+    `Generated: ${new Date().toLocaleString()}`,
+    `Asset records loaded: ${APP_DATA.stats.assetRows}`,
+    `Completed repair assets: ${completed.length}`,
+    `Not completed repair assets: ${notCompleted.length}`,
+    `Assets with no approved repair issue: ${noIssue.length}`,
+    '',
+    'COMPLETED:',
+    ...(completed.length ? completed.map(lineFor) : ['None']),
+    '',
+    'NOT COMPLETED:',
+    ...(notCompleted.length ? notCompleted.map(lineFor) : ['None']),
+    '',
+    'NO APPROVED REPAIR ISSUE:',
+    ...(noIssue.length ? noIssue.map(lineFor) : ['None'])
+  ].join('\n');
+}
+function downloadTextFile(filename, text, mime='text/plain') {
+  const blob = new Blob([text], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function downloadCompletionCsv() {
+  const rows = completionReportRows();
+  const headers = ['Status','Asset Number','Parking Spot','Issues','Additional Comment'];
+  const csv = [headers, ...rows.map(r => [r.status, r.asset, r.spot, r.issues, r.comment])]
+    .map(row => row.map(csvCell).join(','))
+    .join('\n');
+  downloadTextFile('democrat_tug_completion_report.csv', csv, 'text/csv');
+}
+function sendCompletionEmail() {
+  const report = buildCompletionReport();
+  downloadTextFile('democrat_tug_completion_report.txt', report, 'text/plain');
+  const subject = 'Democrat Tug Repair Completion Report';
+  const mailto = `mailto:quinn.cox@fedex.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(report)}`;
+  window.location.href = mailto;
 }
 
 function renderFilters() {
@@ -199,8 +311,10 @@ function renderMap(matches) {
       if (data.spot) {
         if (hasRecord) div.classList.add('hasRecord'); else div.classList.add('noRecord');
         if (matchingSpots.has(data.v)) div.classList.add('match');
+        const completedHere = (recordsBySpot.get(data.v) || []).some(rec => completedAssets.has(rec.asset));
+        if (completedHere) div.classList.add('complete');
         if (selectedSpot === data.v) div.classList.add('selectedSpot');
-        div.title = hasRecord ? `${data.v} — ${recordsBySpot.get(data.v).length} asset record(s)` : `${data.v} — no loaded asset record`;
+        div.title = hasRecord ? `${data.v} — ${recordsBySpot.get(data.v).length} asset record(s), ${(recordsBySpot.get(data.v) || []).filter(rec => completedAssets.has(rec.asset)).length} complete` : `${data.v} — no loaded asset record`;
         div.addEventListener('click', () => { selectedSpot = selectedSpot === data.v ? '' : data.v; updateAll(false); });
       }
       div.textContent = data.v;
@@ -225,12 +339,14 @@ function renderResults(matches) {
   }
   resultsBox.innerHTML = `<table>
     <thead><tr>
-      <th>Asset #</th><th>Parking Spot</th><th>Issues / Filters Matched</th><th>Additional Comment</th>
+      <th>Asset #</th><th>Status</th><th>Action</th><th>Parking Spot</th><th>Issues / Filters Matched</th><th>Additional Comment</th>
       <th>Tread</th><th>Left Headlight</th><th>Right Headlight</th><th>Left Taillight</th><th>Right Taillight</th><th>Horn</th><th>Seat</th><th>Hood Latches</th>
     </tr></thead>
     <tbody>${rows.map(r => `
       <tr>
         <td><strong>${esc(r.asset)}</strong></td>
+        <td><span class="statusTag ${completedAssets.has(r.asset) ? 'complete' : 'open'}">${completedAssets.has(r.asset) ? 'Complete' : 'Not Complete'}</span></td>
+        <td><button class="small ${completedAssets.has(r.asset) ? 'secondary' : 'green'}" data-complete-asset="${esc(r.asset)}" data-complete-state="${completedAssets.has(r.asset) ? '0' : '1'}">${completedAssets.has(r.asset) ? 'Undo' : 'Complete'}</button></td>
         <td>${esc(r.spot || 'Blank')}</td>
         <td><div class="issueList">${(r.issues || []).map(i => `<span class="issueTag">${esc(i)}</span>`).join('') || '<span style="color:#6b7280">No approved repair filter</span>'}</div></td>
         <td>${esc(r.comment || '')}</td>
@@ -243,6 +359,9 @@ function renderResults(matches) {
         <td>${esc(r.seatCondition)}</td>
         <td>${boolText(r.hoodLatchesWorking)}</td>
       </tr>`).join('')}</tbody></table>`;
+  resultsBox.querySelectorAll('button[data-complete-asset]').forEach(btn => {
+    btn.addEventListener('click', () => setAssetComplete(btn.dataset.completeAsset, btn.dataset.completeState === '1'));
+  });
 }
 
 function updateAll(alsoFilters=true) {
@@ -252,8 +371,13 @@ function updateAll(alsoFilters=true) {
   selectedCount.textContent = `${selectedFilters.size} selected`;
   matchCountStat.textContent = matches.length;
   spotCountStat.textContent = matchingSpots.size;
+  const repairList = repairRecords();
+  const completeCount = repairList.filter(r => completedAssets.has(r.asset)).length;
+  completeCountStat.textContent = completeCount;
+  notCompleteCountStat.textContent = repairList.length - completeCount;
+  undoCompleteBtn.disabled = !lastCompletionAction;
   mapStatus.textContent = selectedFilters.size
-    ? `${matches.length} matching asset record(s) across ${matchingSpots.size} mapped parking spot(s).${selectedSpot ? ' Spot ' + selectedSpot + ' selected.' : ''}`
+    ? `${matches.length} matching asset record(s) across ${matchingSpots.size} mapped parking spot(s). ${completeCount} repair asset(s) complete.${selectedSpot ? ' Spot ' + selectedSpot + ' selected.' : ''}`
     : `${selectedSpot ? 'Spot ' + selectedSpot + ' selected.' : 'No filters selected.'}`;
   renderMap(matches);
   renderResults(matches);
@@ -273,6 +397,9 @@ byId('selectBaseBtn').addEventListener('click', () => {
   updateAll();
 });
 byId('resetSpotBtn').addEventListener('click', () => { selectedSpot = ''; updateAll(false); });
+undoCompleteBtn.addEventListener('click', undoLastComplete);
+sendCompleteBtn.addEventListener('click', sendCompletionEmail);
+downloadCsvBtn.addEventListener('click', downloadCompletionCsv);
 filterSearch.addEventListener('input', renderFilters);
 matchAll.addEventListener('change', () => updateAll(false));
 updateAll();

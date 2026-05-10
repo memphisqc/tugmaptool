@@ -87,7 +87,7 @@
 <body>
 <header>
   <h1>Democrat Tug Repair Parking Map</h1>
-  <div class="subtitle">Choose one or more approved repair filters. Matching spots turn red. Completed tugs turn green and are saved in this browser.</div>
+  <div class="subtitle">Search by asset number or choose repair filters. Matching spots turn red. Completed tugs turn green and are saved in this browser.</div>
 </header>
 <main>
   <div class="layout">
@@ -102,6 +102,7 @@
           <div class="stat"><b id="completeCountStat">0</b><span>completed repairs</span></div>
           <div class="stat"><b id="notCompleteCountStat">0</b><span>not completed repairs</span></div>
         </div>
+        <input id="assetSearch" class="search" placeholder="Search asset number or parking spot..." inputmode="numeric" />
         <input id="filterSearch" class="search" placeholder="Search filters..." />
         <label class="matchbox"><input id="matchAll" type="checkbox" /> Match all selected filters instead of any selected filter.</label>
         <div class="controls">
@@ -151,6 +152,7 @@ const mapBox = byId('map');
 const resultsBox = byId('results');
 const selectedCount = byId('selectedCount');
 const matchAll = byId('matchAll');
+const assetSearch = byId('assetSearch');
 const filterSearch = byId('filterSearch');
 const assetCount = byId('assetCount');
 const matchCountStat = byId('matchCountStat');
@@ -185,6 +187,15 @@ function recordMatches(rec) {
   return [...selectedFilters].some(f => issues.has(f));
 }
 function getMatches() { return APP_DATA.records.filter(recordMatches); }
+function assetSearchValue() { return assetSearch.value.trim().toLowerCase(); }
+function getAssetSearchRows() {
+  const q = assetSearchValue();
+  if (!q) return [];
+  return APP_DATA.records.filter(r =>
+    String(r.asset || '').toLowerCase().includes(q) ||
+    String(r.spot || '').toLowerCase().includes(q)
+  );
+}
 function sortRecords(a,b) {
   const as = a.spot || 'ZZZ'; const bs = b.spot || 'ZZZ';
   const an = /^\d+$/.test(as), bn = /^\d+$/.test(bs);
@@ -299,6 +310,7 @@ function renderFilters() {
 
 function renderMap(matches) {
   const matchingSpots = new Set(matches.map(r => r.spot).filter(Boolean));
+  const assetSearchSpots = new Set(getAssetSearchRows().map(r => r.spot).filter(Boolean));
   const cellMap = new Map(APP_DATA.cells.map(c => [`${c.r}:${c.c}`, c]));
   mapBox.innerHTML = '';
   for (let r=1; r<=APP_DATA.maxr; r++) {
@@ -313,7 +325,7 @@ function renderMap(matches) {
         if (matchingSpots.has(data.v)) div.classList.add('match');
         const completedHere = (recordsBySpot.get(data.v) || []).some(rec => completedAssets.has(rec.asset));
         if (completedHere) div.classList.add('complete');
-        if (selectedSpot === data.v) div.classList.add('selectedSpot');
+        if (selectedSpot === data.v || assetSearchSpots.has(data.v)) div.classList.add('selectedSpot');
         div.title = hasRecord ? `${data.v} — ${recordsBySpot.get(data.v).length} asset record(s), ${(recordsBySpot.get(data.v) || []).filter(rec => completedAssets.has(rec.asset)).length} complete` : `${data.v} — no loaded asset record`;
         div.addEventListener('click', () => { selectedSpot = selectedSpot === data.v ? '' : data.v; updateAll(false); });
       }
@@ -324,17 +336,20 @@ function renderMap(matches) {
 }
 
 function renderResults(matches) {
-  let rows = matches.slice().sort(sortRecords);
-  if (selectedSpot) rows = rows.filter(r => r.spot === selectedSpot);
-  if (selectedFilters.size === 0 && !selectedSpot) {
-    resultsBox.innerHTML = '<div class="empty">Select one or more filters to light up the map and show matching tug details.</div>';
-    resultsSummary.textContent = 'Select filters to see matching records.';
+  const q = assetSearchValue();
+  let rows = q ? getAssetSearchRows().slice().sort(sortRecords) : matches.slice().sort(sortRecords);
+  if (selectedSpot && !q) rows = rows.filter(r => r.spot === selectedSpot);
+  if (selectedFilters.size === 0 && !selectedSpot && !q) {
+    resultsBox.innerHTML = '<div class="empty">Search an asset number, click a parking spot, or select one or more filters to show tug details.</div>';
+    resultsSummary.textContent = 'Search an asset number or select filters to see matching records.';
     return;
   }
-  if (selectedFilters.size === 0 && selectedSpot) { rows = (recordsBySpot.get(selectedSpot) || []).slice().sort(sortRecords); }
-  resultsSummary.textContent = `${rows.length} shown${selectedSpot ? ' for spot ' + selectedSpot : ''}`;
+  if (selectedFilters.size === 0 && selectedSpot && !q) { rows = (recordsBySpot.get(selectedSpot) || []).slice().sort(sortRecords); }
+  resultsSummary.textContent = q
+    ? `${rows.length} shown for asset/spot search "${esc(assetSearch.value.trim())}"`
+    : `${rows.length} shown${selectedSpot ? ' for spot ' + selectedSpot : ''}`;
   if (!rows.length) {
-    resultsBox.innerHTML = '<div class="empty">No records match the current selection.</div>';
+    resultsBox.innerHTML = '<div class="empty">No records match the current asset search, spot, or filter selection.</div>';
     return;
   }
   resultsBox.innerHTML = `<table>
@@ -367,6 +382,8 @@ function renderResults(matches) {
 function updateAll(alsoFilters=true) {
   if (alsoFilters) renderFilters();
   const matches = getMatches();
+  const assetSearchRows = getAssetSearchRows();
+  const q = assetSearchValue();
   const matchingSpots = new Set(matches.map(r => r.spot).filter(Boolean));
   selectedCount.textContent = `${selectedFilters.size} selected`;
   matchCountStat.textContent = matches.length;
@@ -376,9 +393,11 @@ function updateAll(alsoFilters=true) {
   completeCountStat.textContent = completeCount;
   notCompleteCountStat.textContent = repairList.length - completeCount;
   undoCompleteBtn.disabled = !lastCompletionAction;
-  mapStatus.textContent = selectedFilters.size
-    ? `${matches.length} matching asset record(s) across ${matchingSpots.size} mapped parking spot(s). ${completeCount} repair asset(s) complete.${selectedSpot ? ' Spot ' + selectedSpot + ' selected.' : ''}`
-    : `${selectedSpot ? 'Spot ' + selectedSpot + ' selected.' : 'No filters selected.'}`;
+  mapStatus.textContent = q
+    ? `Asset/spot search showing ${assetSearchRows.length} record(s). Search matches are outlined in blue. ${completeCount} repair asset(s) complete.`
+    : (selectedFilters.size
+      ? `${matches.length} matching asset record(s) across ${matchingSpots.size} mapped parking spot(s). ${completeCount} repair asset(s) complete.${selectedSpot ? ' Spot ' + selectedSpot + ' selected.' : ''}`
+      : `${selectedSpot ? 'Spot ' + selectedSpot + ' selected.' : 'No filters selected.'}`);
   renderMap(matches);
   renderResults(matches);
 }
@@ -400,6 +419,7 @@ byId('resetSpotBtn').addEventListener('click', () => { selectedSpot = ''; update
 undoCompleteBtn.addEventListener('click', undoLastComplete);
 sendCompleteBtn.addEventListener('click', sendCompletionEmail);
 downloadCsvBtn.addEventListener('click', downloadCompletionCsv);
+assetSearch.addEventListener('input', () => updateAll(false));
 filterSearch.addEventListener('input', renderFilters);
 matchAll.addEventListener('change', () => updateAll(false));
 updateAll();

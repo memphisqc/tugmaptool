@@ -18,6 +18,10 @@
     --blue: #2563eb;
     --green: #22c55e;
     --green-dark: #166534;
+    --orange: #f97316;
+    --orange-dark: #9a3412;
+    --gse: #7c3aed;
+    --gse-dark: #4c1d95;
   }
   * { box-sizing: border-box; }
   body { margin:0; font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text); }
@@ -40,6 +44,8 @@
   button.secondary { background:#e5e7eb; color:#111827; }
   button.blue { background:var(--blue); }
   button.green { background:var(--green-dark); }
+  button.orange { background:var(--orange-dark); }
+  button.gse { background:var(--gse-dark); }
   button.danger { background:#991b1b; }
   button.small { padding:6px 8px; font-size:12px; border-radius:8px; }
   button:disabled { opacity:.55; cursor:not-allowed; }
@@ -58,6 +64,8 @@
   .spot.hasRecord { background:white; border-color:#9ca3af; }
   .spot.match { background:var(--red); color:white; border-color:var(--red-dark); box-shadow:0 0 0 2px rgba(239,68,68,.22); transform: scale(1.06); z-index:2; }
   .spot.complete { background:var(--green); color:white; border-color:var(--green-dark); box-shadow:0 0 0 2px rgba(34,197,94,.24); transform: scale(1.06); z-index:3; }
+  .spot.cantFind { background:var(--orange); color:white; border-color:var(--orange-dark); box-shadow:0 0 0 2px rgba(249,115,22,.24); transform: scale(1.06); z-index:3; }
+  .spot.atGse { background:var(--gse); color:white; border-color:var(--gse-dark); box-shadow:0 0 0 2px rgba(124,58,237,.24); transform: scale(1.06); z-index:3; }
   .spot.noRecord { opacity:.55; }
   .spot.selectedSpot { outline:3px solid #2563eb; outline-offset:1px; }
   .labelcell { background:#e5e7eb; color:#374151; border:1px solid #d1d5db; font-weight:700; }
@@ -66,6 +74,8 @@
   .swatch { width:16px; height:12px; border-radius:3px; border:1px solid #9ca3af; }
   .swatch.red { background:#ef4444; border-color:#991b1b; }
   .swatch.green { background:#22c55e; border-color:#166534; }
+  .swatch.orange { background:#f97316; border-color:#9a3412; }
+  .swatch.gse { background:#7c3aed; border-color:#4c1d95; }
   .swatch.white { background:#fff; }
   .resultsSummary { font-weight:800; }
   .tableWrap { overflow:auto; max-height: 420px; }
@@ -77,6 +87,8 @@
   .issueTag { background:#fee2e2; color:#991b1b; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:700; }
   .statusTag { display:inline-block; border-radius:999px; padding:3px 8px; font-size:11px; font-weight:800; white-space:nowrap; }
   .statusTag.complete { background:#dcfce7; color:#166534; }
+  .statusTag.cantFind { background:#ffedd5; color:#9a3412; }
+  .statusTag.atGse { background:#ede9fe; color:#4c1d95; }
   .statusTag.open { background:#f3f4f6; color:#374151; }
   .reportNote { font-size:12px; color:#6b7280; line-height:1.35; margin-top:8px; }
   .empty { padding:18px; color:var(--muted); text-align:center; }
@@ -87,7 +99,7 @@
 <body>
 <header>
   <h1>Democrat Tug Repair Parking Map</h1>
-  <div class="subtitle">Search by asset number or choose repair filters. Matching spots turn red. Completed tugs turn green and are saved in this browser.</div>
+  <div class="subtitle">Search by asset number or choose repair filters. Matching spots turn red. Completed tugs turn green, Can't Find turns orange, and At GSE turns purple. Status is saved in this browser.</div>
 </header>
 <main>
   <div class="layout">
@@ -108,11 +120,11 @@
         <div class="controls">
           <button id="clearBtn" class="secondary">Clear Filters</button>
           <button id="selectBaseBtn" class="blue">Select Inspection Filters</button>
-          <button id="undoCompleteBtn" class="secondary" disabled>Undo Last Complete</button>
+          <button id="undoCompleteBtn" class="secondary" disabled>Undo Last Status</button>
           <button id="sendCompleteBtn" class="green">Send Complete Email</button>
           <button id="downloadCsvBtn" class="secondary">Download Complete CSV</button>
         </div>
-        <div class="reportNote">Completion status is saved on this computer/browser. Use the email or CSV button before switching computers.</div>
+        <div class="reportNote">Complete / Can't Find / At GSE status is saved on this computer/browser. Use the email or CSV button before switching computers.</div>
         <div id="filters" class="filters"></div>
         <div id="dataWarning" class="warn"></div>
       </div>
@@ -131,6 +143,8 @@
         <div class="key"><span class="swatch white"></span> Default map spot</div>
         <div class="key"><span class="swatch red"></span> Matches selected filter</div>
         <div class="key"><span class="swatch green"></span> Completed repair</div>
+        <div class="key"><span class="swatch orange"></span> Can't find</div>
+        <div class="key"><span class="swatch gse"></span> At GSE</div>
       </div>
     </section>
   </div>
@@ -169,15 +183,26 @@ const dataWarning = byId('dataWarning');
 let selectedFilters = new Set();
 let selectedSpot = '';
 const STORAGE_KEY = 'democratTugCompletedAssets_v1';
-const DEFAULT_COMPLETED_ASSETS = ["18217", "18345", "28116", "28123", "28138", "34561", "34566", "39151", "39152", "40014", "40057", "40077", "40440", "501646", "504119", "504184", "507534", "508134", "512100", "10090"];
-const DEFAULTS_IMPORTED_KEY = STORAGE_KEY + '_defaultsImported_2026_05_10';
-let savedCompletedAssets = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+const CANT_FIND_STORAGE_KEY = 'democratTugCantFindAssets_v1';
+const AT_GSE_STORAGE_KEY = 'democratTugAtGseAssets_v1';
+const DEFAULT_COMPLETED_ASSETS = ["10090", "515359", "30913", "504112", "501581", "74259", "18214", "18217", "18220", "508134", "18345", "18377", "504337", "30823", "533567", "28123", "512100", "34559", "34561", "34566", "501646", "514133", "513791", "501697", "515360", "507539", "40057", "40084", "28138", "504176", "40077", "504263", "512322", "507534", "40014", "39998", "40063", "514106", "39152", "40440", "518816", "518911", "501539", "507536", "53501", "501602", "504184", "39151", "86158"];
+const DEFAULTS_IMPORTED_KEY = STORAGE_KEY + '_defaultsImported_2026_05_10_full_completed_list_v2';
+function loadAssetSet(key) {
+  try { return new Set(JSON.parse(localStorage.getItem(key) || '[]').map(String)); }
+  catch { return new Set(); }
+}
+let completedAssets = loadAssetSet(STORAGE_KEY);
+let cantFindAssets = loadAssetSet(CANT_FIND_STORAGE_KEY);
+let atGseAssets = loadAssetSet(AT_GSE_STORAGE_KEY);
 if (!localStorage.getItem(DEFAULTS_IMPORTED_KEY)) {
-  savedCompletedAssets = [...new Set([...DEFAULT_COMPLETED_ASSETS, ...savedCompletedAssets])];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(savedCompletedAssets.sort()));
+  DEFAULT_COMPLETED_ASSETS.forEach(asset => {
+    completedAssets.add(asset);
+    cantFindAssets.delete(asset);
+    atGseAssets.delete(asset);
+  });
+  saveAssetStatuses();
   localStorage.setItem(DEFAULTS_IMPORTED_KEY, '1');
 }
-let completedAssets = new Set(savedCompletedAssets);
 let lastCompletionAction = null;
 
 const recordsBySpot = new Map();
@@ -214,22 +239,52 @@ function sortRecords(a,b) {
 function repairRecords() {
   return APP_DATA.records.filter(r => (r.issues || []).length > 0);
 }
-function saveCompletedAssets() {
+function saveAssetStatuses() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify([...completedAssets].sort()));
+  localStorage.setItem(CANT_FIND_STORAGE_KEY, JSON.stringify([...cantFindAssets].sort()));
+  localStorage.setItem(AT_GSE_STORAGE_KEY, JSON.stringify([...atGseAssets].sort()));
+}
+function getAssetStatus(asset) {
+  asset = String(asset);
+  if (completedAssets.has(asset)) return 'complete';
+  if (cantFindAssets.has(asset)) return 'cantFind';
+  if (atGseAssets.has(asset)) return 'atGse';
+  return 'open';
+}
+function getAssetStatusLabel(asset) {
+  const status = getAssetStatus(asset);
+  if (status === 'complete') return 'Complete';
+  if (status === 'cantFind') return "Can't Find";
+  if (status === 'atGse') return 'At GSE';
+  return 'Not Complete';
+}
+function getReportStatus(asset, hasIssue=true) {
+  const status = getAssetStatus(asset);
+  if (status === 'complete') return 'COMPLETE';
+  if (status === 'cantFind') return "CAN'T FIND";
+  if (status === 'atGse') return 'AT GSE';
+  return hasIssue ? 'NOT COMPLETE' : 'NO APPROVED REPAIR ISSUE';
+}
+function setAssetStatus(asset, newStatus) {
+  asset = String(asset);
+  const previousStatus = getAssetStatus(asset);
+  completedAssets.delete(asset);
+  cantFindAssets.delete(asset);
+  atGseAssets.delete(asset);
+  if (newStatus === 'complete') completedAssets.add(asset);
+  if (newStatus === 'cantFind') cantFindAssets.add(asset);
+  if (newStatus === 'atGse') atGseAssets.add(asset);
+  lastCompletionAction = { asset, previousStatus, newStatus };
+  saveAssetStatuses();
+  updateAll(false);
 }
 function setAssetComplete(asset, isComplete) {
-  const wasComplete = completedAssets.has(asset);
-  if (isComplete) completedAssets.add(asset); else completedAssets.delete(asset);
-  lastCompletionAction = { asset, wasComplete };
-  saveCompletedAssets();
-  updateAll(false);
+  setAssetStatus(asset, isComplete ? 'complete' : 'open');
 }
 function undoLastComplete() {
   if (!lastCompletionAction) return;
-  if (lastCompletionAction.wasComplete) completedAssets.add(lastCompletionAction.asset);
-  else completedAssets.delete(lastCompletionAction.asset);
+  setAssetStatus(lastCompletionAction.asset, lastCompletionAction.previousStatus);
   lastCompletionAction = null;
-  saveCompletedAssets();
   updateAll(false);
 }
 function csvCell(value) {
@@ -238,7 +293,7 @@ function csvCell(value) {
 }
 function completionReportRows() {
   return APP_DATA.records.slice().sort(sortRecords).map(r => ({
-    status: completedAssets.has(r.asset) ? 'COMPLETE' : ((r.issues || []).length ? 'NOT COMPLETE' : 'NO APPROVED REPAIR ISSUE'),
+    status: getReportStatus(r.asset, (r.issues || []).length > 0),
     asset: r.asset,
     spot: r.spot || 'Blank',
     issues: (r.issues || []).join('; '),
@@ -248,6 +303,8 @@ function completionReportRows() {
 function buildCompletionReport() {
   const rows = completionReportRows();
   const completed = rows.filter(r => r.status === 'COMPLETE');
+  const cantFind = rows.filter(r => r.status === "CAN'T FIND");
+  const atGse = rows.filter(r => r.status === 'AT GSE');
   const notCompleted = rows.filter(r => r.status === 'NOT COMPLETE');
   const noIssue = rows.filter(r => r.status === 'NO APPROVED REPAIR ISSUE');
   const lineFor = r => `Asset ${r.asset} | Spot ${r.spot} | ${r.issues || 'No approved repair issue'}${r.comment ? ' | Comment: ' + r.comment : ''}`;
@@ -256,11 +313,19 @@ function buildCompletionReport() {
     `Generated: ${new Date().toLocaleString()}`,
     `Asset records loaded: ${APP_DATA.stats.assetRows}`,
     `Completed repair assets: ${completed.length}`,
+    `Can't find assets: ${cantFind.length}`,
+    `At GSE assets: ${atGse.length}`,
     `Not completed repair assets: ${notCompleted.length}`,
     `Assets with no approved repair issue: ${noIssue.length}`,
     '',
     'COMPLETED:',
     ...(completed.length ? completed.map(lineFor) : ['None']),
+    '',
+    "CAN'T FIND:",
+    ...(cantFind.length ? cantFind.map(lineFor) : ['None']),
+    '',
+    'AT GSE:',
+    ...(atGse.length ? atGse.map(lineFor) : ['None']),
     '',
     'NOT COMPLETED:',
     ...(notCompleted.length ? notCompleted.map(lineFor) : ['None']),
@@ -331,10 +396,15 @@ function renderMap(matches) {
       if (data.spot) {
         if (hasRecord) div.classList.add('hasRecord'); else div.classList.add('noRecord');
         if (matchingSpots.has(data.v)) div.classList.add('match');
-        const completedHere = (recordsBySpot.get(data.v) || []).some(rec => completedAssets.has(rec.asset));
+        const spotRecords = recordsBySpot.get(data.v) || [];
+        const completedHere = spotRecords.some(rec => getAssetStatus(rec.asset) === 'complete');
+        const cantFindHere = spotRecords.some(rec => getAssetStatus(rec.asset) === 'cantFind');
+        const atGseHere = spotRecords.some(rec => getAssetStatus(rec.asset) === 'atGse');
         if (completedHere) div.classList.add('complete');
+        else if (atGseHere) div.classList.add('atGse');
+        else if (cantFindHere) div.classList.add('cantFind');
         if (selectedSpot === data.v || assetSearchSpots.has(data.v)) div.classList.add('selectedSpot');
-        div.title = hasRecord ? `${data.v} — ${recordsBySpot.get(data.v).length} asset record(s), ${(recordsBySpot.get(data.v) || []).filter(rec => completedAssets.has(rec.asset)).length} complete` : `${data.v} — no loaded asset record`;
+        div.title = hasRecord ? `${data.v} — ${spotRecords.length} asset record(s), ${spotRecords.filter(rec => getAssetStatus(rec.asset) === 'complete').length} complete, ${spotRecords.filter(rec => getAssetStatus(rec.asset) === 'cantFind').length} can't find, ${spotRecords.filter(rec => getAssetStatus(rec.asset) === 'atGse').length} at GSE` : `${data.v} — no loaded asset record`;
         div.addEventListener('click', () => { selectedSpot = selectedSpot === data.v ? '' : data.v; updateAll(false); });
       }
       div.textContent = data.v;
@@ -362,14 +432,18 @@ function renderResults(matches) {
   }
   resultsBox.innerHTML = `<table>
     <thead><tr>
-      <th>Asset #</th><th>Status</th><th>Action</th><th>Parking Spot</th><th>Issues / Filters Matched</th><th>Additional Comment</th>
+      <th>Asset #</th><th>Status</th><th>Actions</th><th>Parking Spot</th><th>Issues / Filters Matched</th><th>Additional Comment</th>
       <th>Tread</th><th>Left Headlight</th><th>Right Headlight</th><th>Left Taillight</th><th>Right Taillight</th><th>Horn</th><th>Seat</th><th>Hood Latches</th>
     </tr></thead>
     <tbody>${rows.map(r => `
       <tr>
         <td><strong>${esc(r.asset)}</strong></td>
-        <td><span class="statusTag ${completedAssets.has(r.asset) ? 'complete' : 'open'}">${completedAssets.has(r.asset) ? 'Complete' : 'Not Complete'}</span></td>
-        <td><button class="small ${completedAssets.has(r.asset) ? 'secondary' : 'green'}" data-complete-asset="${esc(r.asset)}" data-complete-state="${completedAssets.has(r.asset) ? '0' : '1'}">${completedAssets.has(r.asset) ? 'Undo' : 'Complete'}</button></td>
+        <td><span class="statusTag ${getAssetStatus(r.asset)}">${getAssetStatusLabel(r.asset)}</span></td>
+        <td>
+          <button class="small ${getAssetStatus(r.asset) === 'complete' ? 'secondary' : 'green'}" data-status-asset="${esc(r.asset)}" data-status-value="${getAssetStatus(r.asset) === 'complete' ? 'open' : 'complete'}">${getAssetStatus(r.asset) === 'complete' ? 'Undo' : 'Complete'}</button>
+          <button class="small ${getAssetStatus(r.asset) === 'cantFind' ? 'secondary' : 'orange'}" data-status-asset="${esc(r.asset)}" data-status-value="${getAssetStatus(r.asset) === 'cantFind' ? 'open' : 'cantFind'}">${getAssetStatus(r.asset) === 'cantFind' ? 'Undo' : "Can't Find"}</button>
+          <button class="small ${getAssetStatus(r.asset) === 'atGse' ? 'secondary' : 'gse'}" data-status-asset="${esc(r.asset)}" data-status-value="${getAssetStatus(r.asset) === 'atGse' ? 'open' : 'atGse'}">${getAssetStatus(r.asset) === 'atGse' ? 'Undo' : 'At GSE'}</button>
+        </td>
         <td>${esc(r.spot || 'Blank')}</td>
         <td><div class="issueList">${(r.issues || []).map(i => `<span class="issueTag">${esc(i)}</span>`).join('') || '<span style="color:#6b7280">No approved repair filter</span>'}</div></td>
         <td>${esc(r.comment || '')}</td>
@@ -382,8 +456,8 @@ function renderResults(matches) {
         <td>${esc(r.seatCondition)}</td>
         <td>${boolText(r.hoodLatchesWorking)}</td>
       </tr>`).join('')}</tbody></table>`;
-  resultsBox.querySelectorAll('button[data-complete-asset]').forEach(btn => {
-    btn.addEventListener('click', () => setAssetComplete(btn.dataset.completeAsset, btn.dataset.completeState === '1'));
+  resultsBox.querySelectorAll('button[data-status-asset]').forEach(btn => {
+    btn.addEventListener('click', () => setAssetStatus(btn.dataset.statusAsset, btn.dataset.statusValue));
   });
 }
 
@@ -397,9 +471,12 @@ function updateAll(alsoFilters=true) {
   matchCountStat.textContent = matches.length;
   spotCountStat.textContent = matchingSpots.size;
   const repairList = repairRecords();
-  const completeCount = repairList.filter(r => completedAssets.has(r.asset)).length;
+  const completeCount = repairList.filter(r => getAssetStatus(r.asset) === 'complete').length;
+  const cantFindCount = repairList.filter(r => getAssetStatus(r.asset) === 'cantFind').length;
+  const atGseCount = repairList.filter(r => getAssetStatus(r.asset) === 'atGse').length;
+  const openCount = repairList.filter(r => getAssetStatus(r.asset) === 'open').length;
   completeCountStat.textContent = completeCount;
-  notCompleteCountStat.textContent = repairList.length - completeCount;
+  notCompleteCountStat.textContent = openCount;
   undoCompleteBtn.disabled = !lastCompletionAction;
   mapStatus.textContent = q
     ? `Asset/spot search showing ${assetSearchRows.length} record(s). Search matches are outlined in blue. ${completeCount} repair asset(s) complete.`

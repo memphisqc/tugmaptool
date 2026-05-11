@@ -112,6 +112,8 @@
           <div class="stat"><b id="spotCountStat">0</b><span>matching spots</span></div>
           <div class="stat"><b id="blankSpotStat">0</b><span>assets with blank spot</span></div>
           <div class="stat"><b id="completeCountStat">0</b><span>completed repairs</span></div>
+          <div class="stat"><b id="cantFindCountStat">0</b><span>can't find</span></div>
+          <div class="stat"><b id="atGseCountStat">0</b><span>at GSE</span></div>
           <div class="stat"><b id="notCompleteCountStat">0</b><span>not completed repairs</span></div>
         </div>
         <input id="assetSearch" class="search" placeholder="Search asset number or parking spot..." inputmode="numeric" />
@@ -173,6 +175,8 @@ const matchCountStat = byId('matchCountStat');
 const spotCountStat = byId('spotCountStat');
 const blankSpotStat = byId('blankSpotStat');
 const completeCountStat = byId('completeCountStat');
+const cantFindCountStat = byId('cantFindCountStat');
+const atGseCountStat = byId('atGseCountStat');
 const notCompleteCountStat = byId('notCompleteCountStat');
 const undoCompleteBtn = byId('undoCompleteBtn');
 const sendCompleteBtn = byId('sendCompleteBtn');
@@ -185,10 +189,10 @@ let selectedSpot = '';
 const STORAGE_KEY = 'democratTugCompletedAssets_v1';
 const CANT_FIND_STORAGE_KEY = 'democratTugCantFindAssets_v1';
 const AT_GSE_STORAGE_KEY = 'democratTugAtGseAssets_v1';
-const DEFAULT_COMPLETED_ASSETS = ["10090", "515359", "504199", "30913", "504112", "501581", "74259", "18214", "18217", "18220", "18221", "508134", "18345", "504333", "18377", "504337", "30823", "533567", "28123", "512100", "28078", "504211", "34559", "34561", "34566", "501646", "514133", "513791", "501697", "518726", "514117", "515360", "507539", "40057", "40084", "28138", "49767", "90359", "504176", "43051", "40077", "504263", "512322", "507534", "40014", "39998", "40063", "518873", "507540", "514106", "39152", "59517", "40440", "514122", "518816", "518911", "515371", "504172", "501539", "507536", "53501", "501732", "501602", "504184", "39151", "86158", "504119", "504228", "28116"];
-const DEFAULT_CANT_FIND_ASSETS = ["512098", "501644", "504189", "28079", "40770", "518796", "40061", "59515", "523151", "523134", "518883", "501543", "512104", "501670"];
-const DEFAULT_AT_GSE_ASSETS = ["515367", "28102", "28148", "71332"];
-const DEFAULTS_IMPORTED_KEY = STORAGE_KEY + '_defaultsImported_2026_05_10_current_phone_transfer_v1';
+const DEFAULT_COMPLETED_ASSETS = ["10090", "515359", "504199", "30913", "504112", "501581", "74259", "18214", "18217", "18220", "18221", "508134", "18345", "504333", "18377", "504337", "30823", "533567", "28123", "512100", "28078", "504211", "34559", "34561", "34566", "501646", "514133", "513791", "501697", "518726", "514117", "28139", "515360", "507539", "40057", "40009", "512330", "39086", "40084", "28100", "28138", "49767", "90359", "504126", "504176", "514123", "43051", "40077", "504263", "512322", "507534", "40014", "39998", "62141", "40063", "518873", "507540", "514106", "39152", "501625", "59517", "40440", "514122", "518816", "518875", "523132", "518911", "518886", "515371", "504172", "501539", "507536", "53501", "501732", "501602", "504184", "39151", "86158", "504119", "504228", "28116"];
+const DEFAULT_CANT_FIND_ASSETS = ["512098", "501644", "504189", "28079", "40770", "518796", "518872", "40029", "40061", "523139", "28167", "512079", "59515", "523151", "523134", "518883", "501543", "512104", "501670"];
+const DEFAULT_AT_GSE_ASSETS = ["515367", "28102", "45770", "504209", "40081", "40087", "508126", "523105", "518819", "28148", "71332"];
+const DEFAULTS_IMPORTED_KEY = STORAGE_KEY + '_defaultsImported_2026_05_10_after_recheck_81_complete_19_cantfind_11_atgse_v2';
 function loadAssetSet(key) {
   try { return new Set(JSON.parse(localStorage.getItem(key) || '[]').map(String)); }
   catch { return new Set(); }
@@ -487,12 +491,14 @@ function updateAll(alsoFilters=true) {
   const atGseCount = repairList.filter(r => getAssetStatus(r.asset) === 'atGse').length;
   const openCount = repairList.filter(r => getAssetStatus(r.asset) === 'open').length;
   completeCountStat.textContent = completeCount;
+  if (cantFindCountStat) cantFindCountStat.textContent = cantFindCount;
+  if (atGseCountStat) atGseCountStat.textContent = atGseCount;
   notCompleteCountStat.textContent = openCount;
   undoCompleteBtn.disabled = !lastCompletionAction;
   mapStatus.textContent = q
-    ? `Asset/spot search showing ${assetSearchRows.length} record(s). Search matches are outlined in blue. ${completeCount} repair asset(s) complete.`
+    ? `Asset/spot search showing ${assetSearchRows.length} record(s). Search matches are outlined in blue. ${completeCount} complete, ${cantFindCount} can't find, ${atGseCount} at GSE, ${openCount} not complete.`
     : (selectedFilters.size
-      ? `${matches.length} matching asset record(s) across ${matchingSpots.size} mapped parking spot(s). ${completeCount} repair asset(s) complete.${selectedSpot ? ' Spot ' + selectedSpot + ' selected.' : ''}`
+      ? `${matches.length} matching asset record(s) across ${matchingSpots.size} mapped parking spot(s). ${completeCount} complete, ${cantFindCount} can't find, ${atGseCount} at GSE, ${openCount} not complete.${selectedSpot ? ' Spot ' + selectedSpot + ' selected.' : ''}`
       : `${selectedSpot ? 'Spot ' + selectedSpot + ' selected.' : 'No filters selected.'}`);
   renderMap(matches);
   renderResults(matches);
